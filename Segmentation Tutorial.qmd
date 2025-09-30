@@ -1,0 +1,346 @@
+---
+title: "Segmentation Tutorial"
+format:
+  html:
+    toc: true
+self-contained: true
+---
+
+# Goal
+
+To show how different choices related to various clustering algorithms systematically change the results to help distinguish when each would be more or less useful/beneficial. The topic of this tutorial is Segmentation, so I will be focused on analyses that cluster people into groups based on their responses to a set of items.
+
+# Setup
+
+This tutorial will run various cluster algorithms (and in some cases try different paramters within one analysis) on a dataset of people's musical genre preferences.
+
+The tutorial will compare the following analyses:
+
+- K Means with raw data as input
+- K Means with a person x person correlation matrix as input
+- K Means with a person x person similarity matrix (Jaccard) as input
+- Latent class analysis
+
+Typically, I would run various checks to identify the optimal cluster number, but for the purposes of comparing methods, I will stick to a 4 cluster solution.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+```
+
+```{r}
+# Load packages
+pacman::p_load("tidyverse", 
+    "factoextra",
+    "patchwork",
+    'ggplot2',
+    'ggrepel',
+    'ClusterR', #for MiniBatchKmeans
+    'irlba', #For faster PCA
+)
+```
+
+```{r}
+# Load data
+dat = read_csv('genre_preferences.csv') %>% 
+    drop_na()
+
+# Create a data set with only numeric columns
+dat_num = dat %>% 
+  select(-ResponseId)
+```
+
+## K Means - Raw Data
+
+```{r}
+# set seed for reproducibility
+set.seed(13)
+k_means = kmeans(dat_num, centers = 4, nstart = 20)
+
+# run PCA
+pca <- prcomp(dat_num, scale. = TRUE)
+
+# Plot the biplot
+scores <- as.data.frame(pca$x[, 1:2])    # respondent positions
+scores$cluster <- factor(k_means$cluster)    # add cluster assignment
+
+# correlate PCs with original items
+cor_with_items <- cor(scores[,1:2], dat_num, use = "pairwise.complete.obs")
+cor_with_items <- as.data.frame(t(cor_with_items))  
+cor_with_items$Variable <- rownames(cor_with_items)
+
+arrow_scale <- 10 # to scale the arrows for readability
+clusternames = levels(scores$cluster)
+
+# Need to find convex hull of each cluster
+hull_points <- scores %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# cluster plot with arrows and labels
+ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  geom_point(alpha = 0.4) +
+  theme_classic() +
+  ggtitle("MiniBatchKmeans Clusters (PCA projection)") +
+  geom_polygon(data = hull_points, aes(fill = cluster), 
+               alpha = 0.1) +
+  theme_classic() +
+  geom_segment(data = cor_with_items,
+               aes(x = 0, y = 0, xend = PC1 * arrow_scale, yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE, color = "black") +
+  ggrepel::geom_text_repel(data = cor_with_items,
+               aes(x = PC1 * (arrow_scale + 0.5),
+                   y = PC2 * (arrow_scale + 0.5),
+                   label = Variable),
+               inherit.aes = FALSE,
+               size = 5, color = "black", max.overlaps = 100) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  scale_color_discrete(labels = clusternames, name = "Cluster") +
+  scale_shape_discrete(labels = clusternames, name = "Cluster") +
+  guides(fill = "none") +
+  ggtitle('') +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11)) 
+```
+
+```{r}
+# Add cluster assignments
+dat_num$kclusters = k_means$cluster
+
+# Pivot long to plot proportions
+plot_data <- dat_num %>%
+  pivot_longer(
+    cols = c(AltRock:Soul),  # all clustering variables
+    names_to = "Variable",
+    values_to = "Score"
+  )
+
+# Get proportions per cluster & genre
+plot_summary <- plot_data %>%
+  group_by(kclusters, Variable) %>%
+  summarise(MeanScore = mean(Score, na.rm = TRUE), .groups = "drop")
+
+# Plot proportions
+ggplot(plot_summary, aes(x = Variable, y = MeanScore,
+                         color = factor(kclusters), group = kclusters)) +
+  geom_line(size = 1.1) +
+  geom_point(size = 2) +
+  facet_wrap(~ kclusters, scales = "free_x") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 10)
+  ) +
+  labs(y = "Proportion Selected", x = "Genre", color = "Cluster")
+```
+
+# K Means - Person x Person Correlation Matrix
+
+```{r}
+# Keep track of resonse IDs
+id_vec <- dat$ResponseId
+
+# filter out respondents with zero variance
+dat_num <- dat %>% select(-ResponseId)
+row_sds <- apply(dat_num, 1, sd, na.rm = TRUE)
+dat_num_nozerovar <- dat_num[row_sds > 0, ]
+id_vec   <- id_vec[row_sds > 0]  # keep IDs aligned
+
+# transpose, items as rows and people as columns
+dat_num_t <- as.data.frame(t(dat_num_nozerovar))
+
+# name columns as people, rows as items
+colnames(dat_num_t) <- id_vec
+rownames(dat_num_t) <- colnames(dat_num_nozerovar)
+
+# Create person-level correlation matrix
+corrmat <- dat_num_t %>% 
+    cor() 
+```
+
+```{r}
+set.seed(10)
+k_means <- MiniBatchKmeans(corrmat, clusters = 4, batch_size = 500, num_init = 10)
+clusters = predict_KMeans(corrmat, k_means$centroids)
+
+
+# ask only for first 10 components (enough for 2D plot + stability checks)
+pcs_fast <- prcomp_irlba(corrmat, n = 10, scale. = TRUE)
+
+# mimic original code
+scores <- as.data.frame(pcs_fast$x[, 1:2])    # respondent positions
+scores$cluster <- factor(clusters)    # add cluster assignment
+
+# correlate PCs with original items
+cor_with_items <- cor(scores[,1:2], dat_num_nozerovar, use = "pairwise.complete.obs")
+cor_with_items <- as.data.frame(t(cor_with_items))  
+cor_with_items$Variable <- rownames(cor_with_items)
+
+arrow_scale <- 120 # to scale the arrows for readability
+clusternames = levels(scores$cluster)
+
+# Need to find convex hull of each cluster
+hull_points <- scores %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# cluster plot with arrows and labels
+ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  geom_point(alpha = 0.4) +
+  theme_classic() +
+  ggtitle("MiniBatchKmeans Clusters (PCA projection)") +
+  geom_polygon(data = hull_points, aes(fill = cluster), 
+               alpha = 0.1) +
+  theme_classic() +
+  geom_segment(data = cor_with_items,
+               aes(x = 0, y = 0, xend = PC1 * arrow_scale, yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE, color = "black") +
+  ggrepel::geom_text_repel(data = cor_with_items,
+               aes(x = PC1 * (arrow_scale + 0.5),
+                   y = PC2 * (arrow_scale + 0.5),
+                   label = Variable),
+               inherit.aes = FALSE,
+               size = 5, color = "black", max.overlaps = 100) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  scale_color_discrete(labels = clusternames, name = "Cluster") +
+  scale_shape_discrete(labels = clusternames, name = "Cluster") +
+  guides(fill = "none") +
+  ggtitle('') +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11)) 
+```
+
+
+```{r}
+dat_num_nozerovar$corrclusters = clusters
+
+plot_data <- dat_num_nozerovar %>%
+  pivot_longer(
+    cols = c(AltRock:Soul),  # all clustering variables
+    names_to = "Variable",
+    values_to = "Score"
+  )
+
+plot_summary <- plot_data %>%
+  group_by(corrclusters, Variable) %>%
+  summarise(MeanScore = mean(Score, na.rm = TRUE), .groups = "drop")
+
+ggplot(plot_summary, aes(x = Variable, y = MeanScore,
+                         color = factor(corrclusters), group = corrclusters)) +
+  geom_line(size = 1.1) +
+  geom_point(size = 2) +
+  facet_wrap(~ corrclusters, scales = "free_x") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 10)
+  ) +
+  labs(y = "Proportion Selected", x = "Genre", color = "Cluster")
+
+```
+
+# K Means - Person x Person Jaccard Similarity Matrix
+
+```{r}
+# --- Jaccard via matrix algebra ---
+a       <- rowSums(dat_num)                   # size of each person's set
+inter   <- tcrossprod(as.matrix(dat_num))                # intersections |A ∩ B|
+union   <- outer(a, a, "+") - inter           # unions |A ∪ B|
+
+J <- matrix(0, nrow(dat_num), nrow(dat_num))
+nz <- union > 0
+J[nz] <- inter[nz] / union[nz]               # Jaccard = |∩| / |∪|
+diag(J) <- 1                                  # define self-similarity
+
+jaccard_sim = J
+```
+
+```{r}
+set.seed(10)
+k_means <- MiniBatchKmeans(jaccard_sim, clusters = 4, batch_size = 500, num_init = 10)
+clusters = predict_KMeans(jaccard_sim, k_means$centroids)
+
+
+# ask only for first 10 components (enough for 2D plot + stability checks)
+pcs_fast <- prcomp_irlba(jaccard_sim, n = 10, scale. = TRUE)
+
+# mimic original code
+scores <- as.data.frame(pcs_fast$x[, 1:2])    # respondent positions
+scores$cluster <- factor(clusters)    # add cluster assignment
+
+# correlate PCs with original items
+cor_with_items <- cor(scores[,1:2], dat_num, use = "pairwise.complete.obs")
+cor_with_items <- as.data.frame(t(cor_with_items))  
+cor_with_items$Variable <- rownames(cor_with_items)
+
+arrow_scale <- 120 # to scale the arrows for readability
+clusternames = levels(scores$cluster)
+
+# Need to find convex hull of each cluster
+hull_points <- scores %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# cluster plot with arrows and labels
+ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  geom_point(alpha = 0.4) +
+  theme_classic() +
+  ggtitle("MiniBatchKmeans Clusters (PCA projection)") +
+  geom_polygon(data = hull_points, aes(fill = cluster), 
+               alpha = 0.1) +
+  theme_classic() +
+  geom_segment(data = cor_with_items,
+               aes(x = 0, y = 0, xend = PC1 * arrow_scale, yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE, color = "black") +
+  ggrepel::geom_text_repel(data = cor_with_items,
+               aes(x = PC1 * (arrow_scale + 0.5),
+                   y = PC2 * (arrow_scale + 0.5),
+                   label = Variable),
+               inherit.aes = FALSE,
+               size = 5, color = "black", max.overlaps = 100) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  scale_color_discrete(labels = clusternames, name = "Cluster") +
+  scale_shape_discrete(labels = clusternames, name = "Cluster") +
+  guides(fill = "none") +
+  ggtitle('') +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11)) 
+```
+
+```{r}
+dat_num$jaccclusters = clusters
+
+plot_data <- dat_num %>%
+  pivot_longer(
+    cols = c(AltRock:Soul),  # all clustering variables
+    names_to = "Variable",
+    values_to = "Score"
+  )
+
+plot_summary <- plot_data %>%
+  group_by(jaccclusters, Variable) %>%
+  summarise(MeanScore = mean(Score, na.rm = TRUE), .groups = "drop")
+
+ggplot(plot_summary, aes(x = Variable, y = MeanScore,
+                         color = factor(jaccclusters), group = jaccclusters)) +
+  geom_line(size = 1.1) +
+  geom_point(size = 2) +
+  facet_wrap(~ jaccclusters, scales = "free_x") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 10)
+  ) +
+  labs(y = "Proportion Selected", x = "Genre", color = "Cluster")
+
+```
+
+# Latent Class Analysis
