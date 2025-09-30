@@ -4,6 +4,10 @@ format:
   html:
     toc: true
 self-contained: true
+execute:
+  fig-width: 8
+  fig-height: 6
+  dpi: 300
 ---
 
 # Goal
@@ -21,7 +25,7 @@ The tutorial will compare the following analyses:
 - K Means with a person x person similarity matrix (Jaccard) as input
 - Latent class analysis
 
-Typically, I would run various checks to identify the optimal cluster number, but for the purposes of comparing methods, I will stick to a 4 cluster solution.
+Typically, I would run various checks to identify the optimal cluster number, but for the educational purpose of comparing methods, I will stick to a 4 cluster solution.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = F, warning = F, message = F)
@@ -107,11 +111,9 @@ ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 ```
 
 ```{r}
-# Add cluster assignments
-dat_num$kclusters = k_means$cluster
-
 # Pivot long to plot proportions
 plot_data <- dat_num %>%
+  mutate(kclusters = k_means$cluster) %>%
   pivot_longer(
     cols = c(AltRock:Soul),  # all clustering variables
     names_to = "Variable",
@@ -125,15 +127,29 @@ plot_summary <- plot_data %>%
 
 # Plot proportions
 ggplot(plot_summary, aes(x = Variable, y = MeanScore,
-                         color = factor(kclusters), group = kclusters)) +
-  geom_line(size = 1.1) +
-  geom_point(size = 2) +
-  facet_wrap(~ kclusters, scales = "free_x") +
+                         fill = factor(kclusters), group = kclusters)) +
+  geom_line(size = 1) +
+  facet_wrap(~ kclusters) +
   theme_bw() +
+  geom_area(alpha = 0.3, position = "identity") +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 10)
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 8)
   ) +
-  labs(y = "Proportion Selected", x = "Genre", color = "Cluster")
+  labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')+
+  coord_polar()
+```
+
+```{r}
+ggplot(plot_summary, aes(x = Variable, y = MeanScore,
+                         fill = factor(kclusters), group = kclusters)) +
+  geom_line(size = 1) +
+  facet_wrap(~ kclusters) +
+  theme_bw() +
+  geom_area(alpha = 0.3, position = "identity") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, color = "black", size = 9)
+  ) +
+  labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')
 ```
 
 # K Means - Person x Person Correlation Matrix
@@ -162,8 +178,8 @@ corrmat <- dat_num_t %>%
 
 ```{r}
 set.seed(10)
-k_means <- MiniBatchKmeans(corrmat, clusters = 4, batch_size = 500, num_init = 10)
-clusters = predict_KMeans(corrmat, k_means$centroids)
+corr_k_means <- MiniBatchKmeans(corrmat, clusters = 4, batch_size = 500, num_init = 10)
+corr_clusters = predict_KMeans(corrmat, corr_k_means$centroids)
 
 
 # ask only for first 10 components (enough for 2D plot + stability checks)
@@ -171,7 +187,7 @@ pcs_fast <- prcomp_irlba(corrmat, n = 10, scale. = TRUE)
 
 # mimic original code
 scores <- as.data.frame(pcs_fast$x[, 1:2])    # respondent positions
-scores$cluster <- factor(clusters)    # add cluster assignment
+scores$cluster <- factor(corr_clusters)    # add cluster assignment
 
 # correlate PCs with original items
 cor_with_items <- cor(scores[,1:2], dat_num_nozerovar, use = "pairwise.complete.obs")
@@ -218,9 +234,8 @@ ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 
 ```{r}
-dat_num_nozerovar$corrclusters = clusters
-
 plot_data <- dat_num_nozerovar %>%
+  mutate(corrclusters = corr_clusters) %>%
   pivot_longer(
     cols = c(AltRock:Soul),  # all clustering variables
     names_to = "Variable",
@@ -232,16 +247,29 @@ plot_summary <- plot_data %>%
   summarise(MeanScore = mean(Score, na.rm = TRUE), .groups = "drop")
 
 ggplot(plot_summary, aes(x = Variable, y = MeanScore,
-                         color = factor(corrclusters), group = corrclusters)) +
-  geom_line(size = 1.1) +
-  geom_point(size = 2) +
-  facet_wrap(~ corrclusters, scales = "free_x") +
+                         fill = factor(corrclusters), group = corrclusters)) +
+  geom_line(size = 1) +
+  facet_wrap(~ corrclusters) +
   theme_bw() +
+  geom_area(alpha = 0.3, position = "identity") +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 10)
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 9)
   ) +
-  labs(y = "Proportion Selected", x = "Genre", color = "Cluster")
+  labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')+
+  coord_polar()
+```
 
+```{r}
+ggplot(plot_summary, aes(x = Variable, y = MeanScore,
+                         fill = factor(corrclusters), group = corrclusters)) +
+  geom_line(size = 1) +
+  facet_wrap(~ corrclusters) +
+  theme_bw() +
+  geom_area(alpha = 0.3, position = "identity") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, color = "black", size = 8)
+  ) +
+  labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')
 ```
 
 # K Means - Person x Person Jaccard Similarity Matrix
@@ -262,8 +290,8 @@ jaccard_sim = J
 
 ```{r}
 set.seed(10)
-k_means <- MiniBatchKmeans(jaccard_sim, clusters = 4, batch_size = 500, num_init = 10)
-clusters = predict_KMeans(jaccard_sim, k_means$centroids)
+jacc_k_means <- MiniBatchKmeans(jaccard_sim, clusters = 4, batch_size = 500, num_init = 10)
+jacc_clusters = predict_KMeans(jaccard_sim, jacc_k_means$centroids)
 
 
 # ask only for first 10 components (enough for 2D plot + stability checks)
@@ -271,7 +299,7 @@ pcs_fast <- prcomp_irlba(jaccard_sim, n = 10, scale. = TRUE)
 
 # mimic original code
 scores <- as.data.frame(pcs_fast$x[, 1:2])    # respondent positions
-scores$cluster <- factor(clusters)    # add cluster assignment
+scores$cluster <- factor(jacc_clusters)    # add cluster assignment
 
 # correlate PCs with original items
 cor_with_items <- cor(scores[,1:2], dat_num, use = "pairwise.complete.obs")
@@ -317,9 +345,8 @@ ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 ```
 
 ```{r}
-dat_num$jaccclusters = clusters
-
 plot_data <- dat_num %>%
+  mutate(jaccclusters = jacc_clusters) %>%
   pivot_longer(
     cols = c(AltRock:Soul),  # all clustering variables
     names_to = "Variable",
@@ -331,16 +358,29 @@ plot_summary <- plot_data %>%
   summarise(MeanScore = mean(Score, na.rm = TRUE), .groups = "drop")
 
 ggplot(plot_summary, aes(x = Variable, y = MeanScore,
-                         color = factor(jaccclusters), group = jaccclusters)) +
-  geom_line(size = 1.1) +
-  geom_point(size = 2) +
-  facet_wrap(~ jaccclusters, scales = "free_x") +
+                         fill = factor(jaccclusters), group = jaccclusters)) +
+  geom_line(size = 1) +
+  facet_wrap(~ jaccclusters) +
   theme_bw() +
+  geom_area(alpha = 0.3, position = "identity") +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 10)
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 8)
   ) +
-  labs(y = "Proportion Selected", x = "Genre", color = "Cluster")
+  labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')+
+  coord_polar()
+```
 
+```{r}
+ggplot(plot_summary, aes(x = Variable, y = MeanScore,
+                         fill = factor(jaccclusters), group = jaccclusters)) +
+  geom_line(size = 1) +
+  facet_wrap(~ jaccclusters) +
+  theme_bw() +
+  geom_area(alpha = 0.3, position = "identity") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, color = "black", size = 9)
+  ) +
+  labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')
 ```
 
 # Latent Class Analysis
