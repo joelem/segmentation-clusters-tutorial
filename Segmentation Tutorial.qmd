@@ -418,6 +418,8 @@ ggplot(plot_summary, aes(x = Variable, y = MeanScore,
 
 In this heatmap, Clusters 1,3,4 show green bands where their prefered genres are and smattered whiteness elsewhere (a pattern that reflects taste specificity), while Cluster 2 shows a smattering of green across genres (more density on classical) suggesting this cluster contains more eclectic/idiosyncratic listeners (that's what separates them from the other clusters).
 
+It is also clearer to see how it doesn't consider magnitude as each cluster holds people that have more and less overall genre selections.
+
 *Just a note: Correlating the respondent rows (the on/off pattern of green and white) is what creates the person x person correlation matrix.*
 
 ```{r}
