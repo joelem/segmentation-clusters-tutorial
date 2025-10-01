@@ -61,7 +61,7 @@ The following figure plots the data along the first two principal components (to
 
 Cluster interpretations:
 
-- Cluster 1: Tends to like all the genres (all genres point in that direction)
+- Cluster 1: Tends to like all the genres, generalists (all genres point in that direction)
 - Cluster 2: More specific taste for afro-diasporic genres (gospel, R&B, Soul, Jazz, Rap, etc)
 - Cluster 3: More specific taste for euro-anglo genres (pop, alt & classic rock, indie, punk metal)
 - Cluster 4: Least interested in music genres (some for country, classic rock, pop)
@@ -70,8 +70,6 @@ Principal Components interpretations:
 
 - PC1: Magnitude of interest (how many genres are liked)
 - PC2: Specific taste of genre (euro-anglo on top, afro-diasporic on bottom)
-
-This captures one of the likely outcomes of K Means clustering with raw data as input: PC1 tends to capture magnitude as the largest driver of variation in the data, and the remaining PCs capture specific tastes of genre.
 
 ```{r}
 # set seed for reproducibility
@@ -128,9 +126,22 @@ ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
         legend.text  = element_text(size = 11)) 
 ```
 
+This highlights one of the likely outcomes of K Means clustering with raw data as input, which uses **euclidean distance** to determine similarity: 
+
+PC1 tends to capture magnitude (how many genres are liked) as the largest driver of variation in the data, and remaining PCs help distinguish between more specific genre tastes.
+
+Pros:
+
+- Magnitude-based clusters can translate into actionable insights (e.g., people who choose many genres may also be more engaged or more likely to take certain behaviors of interest than those who choose fewer).
+- PC2 captures largest residual differences in genre tastes, easily interpretable biplot (magnitude + taste axes)
+
+Cons:
+
+- There might be times when magnitude-based clusters are not as useful or interesting as other kinds of clusters. Since K means forces hard assignments, clustering based on magnitude groups people based on genre count which can obscure taste patterns that emerge with alternative ways to estimate similarity (see next analysis).
+
 ## Aggregate Proportions - Circular
 
-The following polar figure plots the proportions of genres selected by each cluster. I chose a circular format because the shape quickly visually shows whether there are magnitude differences (larger vs smaller more circular shapes) or specific genre preferences (pointy-angular shapes). It corroborates the cluster interpretations above from the biplot.
+The following polar figure plots the proportions of genres selected by each cluster. I chose a circular format because the shape quickly visually shows whether there are magnitude differences (larger vs smaller more circular shapes) or specific genre tastes (directional shapes that point towards constellations of genres). It corroborates the cluster interpretations above from the biplot.
 
 ```{r}
 # Pivot long to plot proportions by cluster
@@ -180,10 +191,43 @@ ggplot(plot_summary, aes(x = Variable, y = MeanScore,
   labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')
 ```
 
+
+## Individual Preference Heatmap
+
+To better understand the raw data patterns behind the clusters, we can plot every respondent as a row in a respondent × genre heatmap. Each column is a genre, and each cell is shaded green if the respondent selected that genre and white if not. Rows are ordered and grouped by cluster, so each cluster appears as a block of respondents with similar patterns. This view exposes the individual-level patterns that give rise to the clusters.
+
+For example, Cluster 1 shows a lot of green and it is the generalist cluster, while Cluster 4 shows a more sparse heatmap as it is the least interested cluster (with few genre exceptions). Clusters 2 and 3 show green bands in the genres they prefer and smattered white elsewhere, reflecting speficificity in taste.
+
+```{r}
+
+heat_df <- dat_num %>%
+  mutate(Respondent = row_number(),
+         Cluster = factor(k_means$cluster)) %>%
+  pivot_longer(
+    cols = -c(Respondent, Cluster),
+    names_to = "Genre",
+    values_to = "Selected"
+  )
+
+ggplot(heat_df, aes(x = Genre, y = reorder(Respondent, Cluster), fill = factor(Selected))) +
+  geom_tile() +
+  facet_grid(rows = vars(Cluster), scales = "free_y", space = "free_y") +
+  scale_fill_manual(values = c("0" = "white", "1" = "forestgreen")) +
+  theme_bw() +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_text(angle = 90, hjust = 1, color = "black", size = 8)
+  ) +
+  labs(x = "Genre", y = "Respondents", fill = "Selected")
+```
+
 # K Means - Person x Person Correlation Matrix
 
 ```{r}
-# Keep track of resonse IDs
+# First we need to create the person x person correlation matrix
+
+# Keep track of resonse IDs (just to make the correlation matrix more interpretable)
 id_vec <- dat$ResponseId
 
 # filter out respondents with zero variance
@@ -204,20 +248,38 @@ corrmat <- dat_num_t %>%
     cor() 
 ```
 
+
+## PCA Biplot
+
+In this biplot, the four clusters and arrows are rearranged differently than the K Means Raw biplot, they are more distributed around the 0,0 point and the arrows show more variation in length.
+
+Cluster interpretations:
+
+- Cluster 1: Prefers Country, pop, classic rock
+- Cluster 2: Likes all kinds of genres that are more niche/experimental (World, Jazz, Classical, Blues, Funk, Indie, etc)
+- Cluster 3: Prefers R&B, Rap, Soul, Gospel, etc
+- Cluster 4: Prefers the harder rocks (Punk, Metal, AltRock, ClassicRock, etc)
+
+Principal Components interpretations:
+- PC1: Cultural roots (from euro-anglo to afro-diasporic genres)
+- PC2: Mainstream to Eclectic genres
+
 ```{r}
-set.seed(10)
+# Run K Means, Batched because of large matrix
+set.seed(10) # for reproducibility
 corr_k_means <- MiniBatchKmeans(corrmat, clusters = 4, batch_size = 500, num_init = 10)
+# Save cluster assignments
 corr_clusters = predict_KMeans(corrmat, corr_k_means$centroids)
 
 
-# ask only for first 10 components (enough for 2D plot + stability checks)
+# ask only for first 10 components 
 pcs_fast <- prcomp_irlba(corrmat, n = 10, scale. = TRUE)
 
-# mimic original code
+# Get scores and add cluster
 scores <- as.data.frame(pcs_fast$x[, 1:2])    # respondent positions
 scores$cluster <- factor(corr_clusters)    # add cluster assignment
 
-# correlate PCs with original items
+# correlate PCs with original items for arrows
 cor_with_items <- cor(scores[,1:2], dat_num_nozerovar, use = "pairwise.complete.obs")
 cor_with_items <- as.data.frame(t(cor_with_items))  
 cor_with_items$Variable <- rownames(cor_with_items)
@@ -260,6 +322,24 @@ ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
         legend.text  = element_text(size = 11)) 
 ```
 
+This highlights a likely outcome of K Means clustering with person x person correlation matrix as input, which uses **correlation** to determine similarity: 
+
+Magnitude is not represented because correlations don’t reflect how many genres a person likes, only whether their relative pattern of preferences (the *shape* of which genres they choose or dont) aligns with others. Instead, the biplot and clusters resemble a preference map, capturing differences in specific genre tastes along dimensions that better differentiate between kinds of genres/types of listeners.
+
+*Note: a “mainstream vs. eclectic” dimension didn’t appear in the raw k-means PCA biplot because the first component was dominated by magnitude (number of genres selected). That distinction might emerge in later components (or not), but it likely explains less variance than sheer magnitude. In contrast, when using correlation similarity — which removes magnitude as a feature — the preference-based dimensions (such as mainstream vs. eclectic) can appear more prominently.*
+
+Pros:
+
+- By ignoring magnitude and focusing on pattern similarity, the PCA space surfaces taste dimensions (e.g., mainstread vs eclectic) that are hidden in magnitude-based clustering.
+- Clusters are more well seperated along the principal components, with clearly different taste profiles
+
+Cons:
+
+- Correlation requires variance: respondents who select all genres or none (even if genuine) provide no variability and must be excluded. This reduces the usable sample and means the clusters do not account for these kinds of respondents (e.g., total generalists or anti-music).
+
+## Aggregate Proportions - Circular
+
+The following shows the proportions of genres selected by each cluster as a polar plot. Unlike the K Means Raw version, you can see that the clusters' shapes are relatively similar overall size, it is their directional shape that differ (pointing towards different consterllations of genres), consistent with the biplot interpretation above.
 
 ```{r}
 plot_data <- dat_num_nozerovar %>%
@@ -287,6 +367,10 @@ ggplot(plot_summary, aes(x = Variable, y = MeanScore,
   coord_polar()
 ```
 
+## Aggregate Proportions 
+
+Same proportions as above, but in a non-circular format. Can see the relative similarity in overall magnitude, but difference in genre preference shape.
+
 ```{r}
 ggplot(plot_summary, aes(x = Variable, y = MeanScore,
                          fill = factor(corrclusters), group = corrclusters)) +
@@ -298,6 +382,36 @@ ggplot(plot_summary, aes(x = Variable, y = MeanScore,
     axis.text.x = element_text(angle = 90, hjust = 1, color = "black", size = 8)
   ) +
   labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')
+```
+
+## Individual Preference Heatmap
+
+In this heatmap, Clusters 1,3,4 show green bands where their prefered genres are and smattered whiteness elsewhere (a pattern that reflects taste specificity), while Cluster 2 shows a smattering of green across genres (more density on classical) suggesting this cluster contains more eclectic/idiosyncratic listeners (that's what separates them from the other clusters).
+
+*Just a note: Correlating the respondent rows (the on/off pattern of green and white) is what creates the person x person correlation matrix.*
+
+```{r}
+
+heat_df <- dat_num_nozerovar %>%
+  mutate(Respondent = row_number(),
+         Cluster = factor(corr_clusters)) %>%
+  pivot_longer(
+    cols = -c(Respondent, Cluster),
+    names_to = "Genre",
+    values_to = "Selected"
+  )
+
+ggplot(heat_df, aes(x = Genre, y = reorder(Respondent, Cluster), fill = factor(Selected))) +
+  geom_tile() +
+  facet_grid(rows = vars(Cluster), scales = "free_y", space = "free_y") +
+  scale_fill_manual(values = c("0" = "white", "1" = "forestgreen")) +
+  theme_bw() +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_text(angle = 90, hjust = 1, color = "black", size = 8)
+  ) +
+  labs(x = "Genre", y = "Respondents", fill = "Selected")
 ```
 
 # K Means - Person x Person Jaccard Similarity Matrix
