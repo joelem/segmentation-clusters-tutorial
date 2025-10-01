@@ -53,7 +53,25 @@ dat_num = dat %>%
   select(-ResponseId)
 ```
 
-## K Means - Raw Data
+# K Means - Raw Data
+
+## PCA Biplot
+
+The following figure plots the data along the first two principal components (top 2 dimensions that explain the most variance in the data). The four clusters are color coded and the arrows represent the correlation between the principal components and the original items. Put simply, the direction of the arrow points to where interest is strongest for that genre, the length of the arrow is how important the influence of that genre is to the overall interpretation. Lastly, the 0,0 point basically represents the overall average respondent across all the data.
+
+Cluster interpretations:
+
+- Cluster 1: Tends to like all the genres (all genres point in that direction)
+- Cluster 2: More specific taste for afro-diasporic genres (gospel, R&B, Soul, Jazz, Rap, etc)
+- Cluster 3: More specific taste for euro-anglo genres (pop, alt & classic rock, indie, punk metal)
+- Cluster 4: Least interested in music genres (some for country, classic rock, pop)
+
+Principal Components interpretations:
+
+- PC1: Magnitude of interest (how many genres are liked)
+- PC2: Specific taste of genre (euro-anglo on top, afro-diasporic on bottom)
+
+This captures one of the likely outcomes of K Means clustering with raw data as input: PC1 tends to capture magnitude as the largest driver of variation in the data, and the remaining PCs capture specific tastes of genre.
 
 ```{r}
 # set seed for reproducibility
@@ -67,7 +85,7 @@ pca <- prcomp(dat_num, scale. = TRUE)
 scores <- as.data.frame(pca$x[, 1:2])    # respondent positions
 scores$cluster <- factor(k_means$cluster)    # add cluster assignment
 
-# correlate PCs with original items
+# correlate PCs with original items for arrows
 cor_with_items <- cor(scores[,1:2], dat_num, use = "pairwise.complete.obs")
 cor_with_items <- as.data.frame(t(cor_with_items))  
 cor_with_items$Variable <- rownames(cor_with_items)
@@ -110,9 +128,14 @@ ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
         legend.text  = element_text(size = 11)) 
 ```
 
+## Aggregate Proportions - Circular
+
+The following polar figure plots the proportions of genres selected by each cluster. I chose a circular format because the shape quickly visually shows whether there are magnitude differences (larger vs smaller more circular shapes) or specific genre preferences (pointy-angular shapes). It corroborates the cluster interpretations above from the biplot.
+
 ```{r}
-# Pivot long to plot proportions
+# Pivot long to plot proportions by cluster
 plot_data <- dat_num %>%
+  # Add cluster labels
   mutate(kclusters = k_means$cluster) %>%
   pivot_longer(
     cols = c(AltRock:Soul),  # all clustering variables
@@ -139,7 +162,12 @@ ggplot(plot_summary, aes(x = Variable, y = MeanScore,
   coord_polar()
 ```
 
+## Aggregate Proportions 
+
+The following plots the same aggregate proportions per cluster, but as an area plot so that it is easier to compare patterns and magnitude across clusters.
+
 ```{r}
+# Same plot but in area style
 ggplot(plot_summary, aes(x = Variable, y = MeanScore,
                          fill = factor(kclusters), group = kclusters)) +
   geom_line(size = 1) +
@@ -280,7 +308,7 @@ a       <- rowSums(dat_num)                   # size of each person's set
 inter   <- tcrossprod(as.matrix(dat_num))                # intersections |A ∩ B|
 union   <- outer(a, a, "+") - inter           # unions |A ∪ B|
 
-J <- matrix(0, nrow(dat_num), nrow(dat_num))
+J <- matrix(0, nrow(dat_num), nrow(dat_num))  #initiate with 0 to account for zero straightlining
 nz <- union > 0
 J[nz] <- inter[nz] / union[nz]               # Jaccard = |∩| / |∪|
 diag(J) <- 1                                  # define self-similarity
