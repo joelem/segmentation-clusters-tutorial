@@ -38,8 +38,8 @@ pacman::p_load("tidyverse",
     "patchwork",
     'ggplot2',
     'ggrepel',
-    'ClusterR', #for MiniBatchKmeans
-    'irlba', #For faster PCA
+    'ClusterR', 
+    'irlba'
 )
 ```
 
@@ -468,7 +468,9 @@ jaccard_sim = J
 
 ## PCA Biplot
 
-This biplot looks like a combination of the previous biplots, the arrows are all generally pointing in one direction like the K Means Raw biplot (with the exception that the direction is off-axis, now towards the lower-left diagonal) and the clusters are evenly distributed around the PCs like the K Means Correlation biplot. It's a little harder to read, but not impossible.
+This biplot looks like a combination of the previous biplots, the arrows are all generally pointing in one direction like the K Means Raw biplot (with the exception that the direction is off-axis, now towards the lower-left diagonal) and the clusters are evenly distributed around the PCs like the K Means Correlation biplot. It's a little harder to read, but not impossible. 
+
+*Note: Jaccard is not a euclidean metric (it reflects set-based similarity - intersection/union), which PCA decomposes variance in a euclidean feature space, so a biplot in the case of Jaccard is an approximation of relationships, not an exact visualization.*
 
 Cluster interpretations:
 
@@ -479,7 +481,7 @@ Cluster interpretations:
 
 PCs interpretations:
 
-- PC1: Cultural roots (from afro-diasporic to euro-anglo genres) AND it seems maybe also mainstream (both ends) vs eclectic (center)
+- PC1: Cultural roots (from afro-diasporic to euro-anglo genres) AND it seems maybe also accounts for mainstream (both ends) vs eclectic (center)
 - PC2: Magnitude of interest (how many genres are liked)
 
 ```{r}
@@ -492,11 +494,11 @@ jacc_clusters = predict_KMeans(jaccard_sim, jacc_k_means$centroids)
 pcs_fast <- prcomp_irlba(jaccard_sim, n = 10, scale. = TRUE)
 
 # mimic original code
-scores <- as.data.frame(pcs_fast$x[, 1:2])    # respondent positions
+scores <- as.data.frame(pcs_fast$x[, 1:3])    # respondent positions
 scores$cluster <- factor(jacc_clusters)    # add cluster assignment
 
 # correlate PCs with original items
-cor_with_items <- cor(scores[,1:2], dat_num, use = "pairwise.complete.obs")
+cor_with_items <- cor(scores[,1:3], dat_num, use = "pairwise.complete.obs")
 cor_with_items <- as.data.frame(t(cor_with_items))  
 cor_with_items$Variable <- rownames(cor_with_items)
 
@@ -506,10 +508,10 @@ clusternames = levels(scores$cluster)
 # Need to find convex hull of each cluster
 hull_points <- scores %>%
   group_by(cluster) %>%
-  slice(chull(PC1, PC2))
+  slice(chull(PC1, PC3))
 
 # cluster plot with arrows and labels
-ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+ggplot(scores, aes(x = PC1, y = PC3, color = cluster, shape = cluster)) +
   geom_point(alpha = 0.4) +
   theme_classic() +
   ggtitle("MiniBatchKmeans Clusters (PCA projection)") +
@@ -517,12 +519,12 @@ ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
                alpha = 0.1) +
   theme_classic() +
   geom_segment(data = cor_with_items,
-               aes(x = 0, y = 0, xend = PC1 * arrow_scale, yend = PC2 * arrow_scale),
+               aes(x = 0, y = 0, xend = PC1 * arrow_scale, yend = PC3 * arrow_scale),
                arrow = arrow(length = unit(0.2,"cm")),
                inherit.aes = FALSE, color = "black") +
   ggrepel::geom_text_repel(data = cor_with_items,
                aes(x = PC1 * (arrow_scale + 0.5),
-                   y = PC2 * (arrow_scale + 0.5),
+                   y = PC3 * (arrow_scale + 0.5),
                    label = Variable),
                inherit.aes = FALSE,
                size = 5, color = "black", max.overlaps = 100) +
@@ -632,3 +634,8 @@ ggplot(heat_df, aes(x = Genre, y = reorder(Respondent, Cluster), fill = factor(S
 ```
 
 # Latent Class Analysis
+
+```{r}
+
+
+```
