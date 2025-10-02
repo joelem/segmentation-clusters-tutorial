@@ -145,13 +145,22 @@ Cons:
 
 ## Aggregate Proportions - Circular
 
-The following polar figure plots the proportions of genres selected by each cluster. I chose a circular format because the shape quickly visually shows whether there are magnitude differences (larger vs smaller more circular shapes) or specific genre tastes (directional shapes that point towards constellations of genres). It corroborates the cluster interpretations above from the biplot.
+The following polar figure plots the proportions of genres selected by each cluster. I chose a circular format because the shape quickly visually shows whether there are magnitude differences (larger vs smaller more circular shapes) or specific genre tastes (directional shapes that point towards constellations of genres). It corroborates the cluster interpretations above from the biplot. The decimals after the cluster name reflect the proportion of the sample in each cluster.
 
 ```{r}
+# Collect proportion of sample for each cluster
+cluster_props <- dat_num %>%
+  mutate(kclusters = k_clusters) %>%
+  count(kclusters) %>%
+  mutate(prop = weights::rd(n / sum(n), 2)) %>%
+  mutate(label = paste0("Cluster ", kclusters, ": ", prop))
+
 # Pivot long to plot proportions by cluster
 plot_data <- dat_num %>%
   # Add cluster labels
-  mutate(kclusters = k_clusters) %>%
+  mutate(kclusters = k_clusters)  %>%
+  left_join(cluster_props[, c("kclusters", "label")], by = "kclusters") %>%
+  mutate(kclusters = factor(label)) %>%
   pivot_longer(
     cols = c(AltRock:Soul),  # all clustering variables
     names_to = "Variable",
@@ -174,7 +183,8 @@ ggplot(plot_summary, aes(x = Variable, y = MeanScore,
     axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 8)
   ) +
   labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')+
-  coord_polar()
+  coord_polar()+
+  guides(fill = "none")
 ```
 
 ## Aggregate Proportions 
@@ -192,7 +202,8 @@ ggplot(plot_summary, aes(x = Variable, y = MeanScore,
   theme(
     axis.text.x = element_text(angle = 90, hjust = 1, color = "black", size = 9)
   ) +
-  labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')
+  labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')+
+  guides(fill = "none")
 ```
 
 
@@ -375,8 +386,17 @@ Cons:
 The following shows the proportions of genres selected by each cluster as a polar plot. Unlike the K Means Raw version, you can see that the clusters' shapes are relatively similar overall size, it is their directional shape that differ (pointing towards different consterllations of genres), consistent with the biplot interpretation above.
 
 ```{r}
+# Collect proportion of sample for each cluster
+cluster_props <- dat_num_nozerovar %>%
+  mutate(corrclusters = corr_clusters) %>%
+  count(corrclusters) %>%
+  mutate(prop = weights::rd(n / sum(n), 2)) %>%
+  mutate(label = paste0("Cluster ", corrclusters, ": ", prop))
+
 plot_data <- dat_num_nozerovar %>%
   mutate(corrclusters = corr_clusters) %>%
+  left_join(cluster_props[, c("corrclusters", "label")], by = "corrclusters") %>%
+  mutate(corrclusters = factor(label)) %>%
   pivot_longer(
     cols = c(AltRock:Soul),  # all clustering variables
     names_to = "Variable",
@@ -397,7 +417,8 @@ ggplot(plot_summary, aes(x = Variable, y = MeanScore,
     axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 9)
   ) +
   labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')+
-  coord_polar()
+  coord_polar()+
+  guides(fill = "none")
 ```
 
 ## Aggregate Proportions 
@@ -414,7 +435,8 @@ ggplot(plot_summary, aes(x = Variable, y = MeanScore,
   theme(
     axis.text.x = element_text(angle = 90, hjust = 1, color = "black", size = 8)
   ) +
-  labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')
+  labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')+
+  guides(fill = "none")
 ```
 
 ## Individual Preference Heatmap
@@ -563,8 +585,17 @@ Cons:
 In the polar plots, it is much easier to see the exaggeration: the bottom row is the magnitude clusters (shape is either larger or small), while the top row shows the magnified classic rock/rap+R&B split.
 
 ```{r}
+# Collect proportion of sample for each cluster
+cluster_props <- dat_num %>%
+  mutate(jaccclusters = jacc_clusters) %>%
+  count(jaccclusters) %>%
+  mutate(prop = weights::rd(n / sum(n), 2)) %>%
+  mutate(label = paste0("Cluster ", jaccclusters, ": ", prop))
+
 plot_data <- dat_num %>%
   mutate(jaccclusters = jacc_clusters) %>%
+  left_join(cluster_props[, c("jaccclusters", "label")], by = "jaccclusters") %>%
+  mutate(jaccclusters = factor(label)) %>%
   pivot_longer(
     cols = c(AltRock:Soul),  # all clustering variables
     names_to = "Variable",
@@ -585,7 +616,8 @@ ggplot(plot_summary, aes(x = Variable, y = MeanScore,
     axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 8)
   ) +
   labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')+
-  coord_polar()
+  coord_polar()+
+  guides(fill = "none")
 ```
 
 ## Aggregate Proportions 
@@ -602,7 +634,8 @@ ggplot(plot_summary, aes(x = Variable, y = MeanScore,
   theme(
     axis.text.x = element_text(angle = 90, hjust = 1, color = "black", size = 9)
   ) +
-  labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')
+  labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')+
+  guides(fill = "none")
 ```
 
 ## Individual Preference Heatmap
@@ -641,7 +674,7 @@ ggplot(heat_df, aes(x = Genre, y = reorder(Respondent, Cluster), fill = factor(S
 
 ```{r}
 # setup & helper functions
-pacman::p_load(poLCA, weights)
+pacman::p_load(poLCA)
 
 
 compare_poLCA_models <- function(models) {
@@ -729,7 +762,7 @@ pivot_longer(metrics, cols = c("AIC", "BIC", "LogLik")) %>%
 
 # Extract class proportions
 classprop = data.frame(Class = paste0('class ', 1:(k), ": "), 
-                      Proportion = rd(modlist[[k-1]]$P, 2)) %>% 
+                      Proportion = weights::rd(modlist[[k-1]]$P, 2)) %>% 
             mutate(Class = factor(Class, levels = paste0('class ', 1:(k), ": ")))
 
 # Extract response probabilities by class & format for ggplot
@@ -740,7 +773,7 @@ modlist[[k-1]]$probs %>%
     mutate(Var2 = factor(Var2, levels = c("Selected", "Not Selected")), Var1=as.character(Var1)) %>%
     rename("Class" = Var1, "Response" = Var2, "Topic" = L1, 'Probability' = value) %>%
     left_join(classprop) %>%
-    mutate(Class = paste0(Class, Proportion)) %>%
+    mutate(Class = paste0(str_to_title(Class), Proportion)) %>%
     filter(Response == "Selected") %>%
     ggplot(aes(x = Topic, y = Probability,
                          fill = factor(Class), group = Class)) +
@@ -752,7 +785,8 @@ modlist[[k-1]]$probs %>%
         axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 8)
       ) +
       labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')+
-      coord_polar()
+      coord_polar()+
+      guides(fill = "none")
 ```
 
 ```{r}
@@ -775,7 +809,8 @@ modlist[[k-1]]$probs %>%
       theme(
         axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 8)
       ) +
-      labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')
+      labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')+
+      guides(fill = "none")
 
 ```
 
