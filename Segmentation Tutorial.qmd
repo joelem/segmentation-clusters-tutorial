@@ -540,6 +540,7 @@ ggplot(scores, aes(x = PC1, y = PC3, color = cluster, shape = cluster)) +
         legend.text  = element_text(size = 11)) 
 ```
 
+
 This highlights one outcome of K Means clustering with Jaccard similarity as input, which uses **Jaccard** to determine similarity:
 
 Jaccard balances both magnitude (how many genres are selected) and taste patterns (which genres overlap). Unlike K means, the relative influence is flipped: the first principal component reflects taste differences, while the second component reflects magnitude. Compared to raw Euclidean K means clustering, Jaccard can downweight sheer magnitude and upweight overlap in specific genres, which can make preference-based distinctions more prominent.
@@ -636,6 +637,172 @@ ggplot(heat_df, aes(x = Genre, y = reorder(Respondent, Cluster), fill = factor(S
 # Latent Class Analysis
 
 ```{r}
+# setup & helper functions
+pacman::p_load(poLCA, weights)
 
+
+compare_poLCA_models <- function(models) {
+  
+  # Extract information criteria and log-likelihood for each model
+    results <- lapply(seq_along(models), function(i) {
+        data.frame(
+        Model = names(models)[i],
+        AIC = models[[i]]$aic,
+        BIC = models[[i]]$bic,
+        LogLik = models[[i]]$llik
+        )
+    })
+  
+  # Combine results into a single data frame
+  combined_results <- do.call(rbind, results)
+  
+  # Sort by preferred criteria (lower AIC/BIC)
+  combined_results <- combined_results[order(combined_results$AIC), ] 
+  
+  return(combined_results)
+}
+
+```
+
+```{r}
+#Fit the model with various number of classes
+
+#if model list file exists
+if(file.exists("LCA_model_list.rds")){
+  modlist <- readRDS("LCA_model_list.rds")
+  #if model list file does not exist and have to run everything from scratch (takes a bit)
+} else {
+  f1 <- as.formula(
+    # Combine and insert all the column names into model formula
+    paste("cbind(", paste(sprintf("`%s`", names(dat_num)), collapse = ","), ") ~ 1")
+    )
+
+  #create an empty list to fill with models
+  modlist <- list()
+  class_nums <- 2:10
+
+  for(i in class_nums){
+    #run the model and insert into list
+    # add 1 to responses as LCA assumes responses start at 1
+    modlist[[i]] <- poLCA(f1, data=dat_num+1, nclass=i,  maxiter=5000, nrep=10)
+    #name the list elements
+    names(modlist)[i] <- paste0("LCA", i)
+  }
+
+  # remove the first element of the list (not used)
+  modlist <- modlist[-1]
+
+  #save list
+  saveRDS(modlist, file = "LCA_model_list.rds")
+}
+```
+
+```{r}
+#| eval: false
+
+#compare metrics
+
+# Just a check, looks like k=4 should be fine as a solution
+
+#collect the metrics for all the models
+metrics = compare_poLCA_models(modlist) %>% 
+  # turn Model into a factor and put in numerical order
+  mutate(Model = factor(Model, levels = paste0('LCA', 2:10)))
+
+#plot it
+pivot_longer(metrics, cols = c("AIC", "BIC", "LogLik")) %>% 
+  ggplot(aes(x = Model, y = value, color = name, group = name)) +
+  geom_line() +
+  facet_grid(rows = vars(name), scales = "free_y") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Model", y = "Value", color = "Metric")+
+  geom_text(aes(label = round(value, 0)), position = position_dodge(width = 0.9), vjust = 1, size = 3) + 
+  theme_bw()+ 
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1)))
+```
+
+```{r}  
+# Plot the results
+
+# Extract class proportions
+classprop = data.frame(Class = paste0('class ', 1:(k), ": "), 
+                      Proportion = rd(modlist[[k-1]]$P, 2)) %>% 
+            mutate(Class = factor(Class, levels = paste0('class ', 1:(k), ": ")))
+
+# Extract response probabilities by class & format for ggplot
+modlist[[k-1]]$probs %>% 
+    reshape2::melt(.) %>% 
+    mutate(Var2 = case_when(Var2 == 'Pr(1)' ~ "Not Selected",
+                            Var2 == 'Pr(2)' ~ "Selected")) %>% 
+    mutate(Var2 = factor(Var2, levels = c("Selected", "Not Selected")), Var1=as.character(Var1)) %>%
+    rename("Class" = Var1, "Response" = Var2, "Topic" = L1, 'Probability' = value) %>%
+    left_join(classprop) %>%
+    mutate(Class = paste0(Class, Proportion)) %>%
+    filter(Response == "Selected") %>%
+    ggplot(aes(x = Topic, y = Probability,
+                         fill = factor(Class), group = Class)) +
+      geom_line(size = 1) +
+      facet_wrap(~ Class) +
+      theme_bw() +
+      geom_area(alpha = 0.3, position = "identity") +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 8)
+      ) +
+      labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')+
+      coord_polar()
+```
+
+```{r}
+# Extract response probabilities by class & format for ggplot
+modlist[[k-1]]$probs %>% 
+    reshape2::melt(.) %>% 
+    mutate(Var2 = case_when(Var2 == 'Pr(1)' ~ "Not Selected",
+                            Var2 == 'Pr(2)' ~ "Selected")) %>% 
+    mutate(Var2 = factor(Var2, levels = c("Selected", "Not Selected")), Var1=as.character(Var1)) %>%
+    rename("Class" = Var1, "Response" = Var2, "Topic" = L1, 'Probability' = value) %>%
+    left_join(classprop) %>%
+    mutate(Class = paste0(Class, Proportion)) %>%
+    filter(Response == "Selected") %>%
+    ggplot(aes(x = Topic, y = Probability,
+                         fill = factor(Class), group = Class)) +
+      geom_line(size = 1) +
+      facet_wrap(~ Class) +
+      theme_bw() +
+      geom_area(alpha = 0.3, position = "identity") +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 8)
+      ) +
+      labs(y = "Proportion Selected", x = "Genres", fill = 'Cluster')
+
+```
+
+
+```{r}
+
+lca_classes = modlist[[k-1]]$predclass
+
+#Create teh heatmap
+row_order <- order_within_cluster(dat_num, lca_classes)
+
+heat_df <- dat_num %>%
+  mutate(Respondent = factor(row_number(), levels = row_order),
+         Cluster = factor(lca_classes)) %>%
+  pivot_longer(
+    cols = AltRock:Soul,   # ONLY the genre columns
+    names_to = "Genre",
+    values_to = "Selected"
+  )
+
+ggplot(heat_df, aes(x = Genre, y = reorder(Respondent, Cluster), fill = factor(Selected))) +
+  geom_tile() +
+  facet_grid(rows = vars(Cluster), scales = "free_y", space = "free_y") +
+  scale_fill_manual(values = c("0" = "white", "1" = "forestgreen")) +
+  theme_bw() +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_text(angle = 90, hjust = 1, color = "black", size = 8)
+  ) +
+  labs(x = "Genre", y = "Respondents", fill = "Selected")
 
 ```
