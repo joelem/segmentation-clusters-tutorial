@@ -757,6 +757,63 @@ pivot_longer(metrics, cols = c("AIC", "BIC", "LogLik")) %>%
   scale_y_continuous(expand = expansion(mult = c(0.1, 0.1)))
 ```
 
+## PCA Biplot
+
+```{r}
+lca_classes = modlist[[k-1]]$predclass
+
+# run PCA
+pca <- prcomp(dat_num, scale. = TRUE)
+
+# Plot the biplot
+scores <- as.data.frame(pca$x[, 1:2])    # respondent positions
+scores$cluster <- factor(lca_classes)    # add cluster assignment
+
+# correlate PCs with original items for arrows
+cor_with_items <- cor(scores[,1:2], dat_num, use = "pairwise.complete.obs")
+cor_with_items <- as.data.frame(t(cor_with_items))  
+cor_with_items$Variable <- rownames(cor_with_items)
+
+arrow_scale <- 10 # to scale the arrows for readability
+clusternames = levels(scores$cluster)
+
+# Need to find convex hull of each cluster
+hull_points <- scores %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# cluster plot with arrows and labels
+ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  geom_point(alpha = 0.4) +
+  theme_classic() +
+  ggtitle("MiniBatchKmeans Clusters (PCA projection)") +
+  geom_polygon(data = hull_points, aes(fill = cluster), 
+               alpha = 0.1) +
+  theme_classic() +
+  geom_segment(data = cor_with_items,
+               aes(x = 0, y = 0, xend = PC1 * arrow_scale, yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE, color = "black") +
+  ggrepel::geom_text_repel(data = cor_with_items,
+               aes(x = PC1 * (arrow_scale + 0.5),
+                   y = PC2 * (arrow_scale + 0.5),
+                   label = Variable),
+               inherit.aes = FALSE,
+               size = 5, color = "black", max.overlaps = 100) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  scale_color_discrete(labels = clusternames, name = "Cluster") +
+  scale_shape_discrete(labels = clusternames, name = "Cluster") +
+  guides(fill = "none") +
+  ggtitle('') +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11)) 
+```
+
+## Aggregate Proportions - Circular
+
 ```{r}  
 # Plot the results
 
@@ -789,6 +846,8 @@ modlist[[k-1]]$probs %>%
       guides(fill = "none")
 ```
 
+## Aggregate Proportions 
+
 ```{r}
 # Extract response probabilities by class & format for ggplot
 modlist[[k-1]]$probs %>% 
@@ -814,11 +873,9 @@ modlist[[k-1]]$probs %>%
 
 ```
 
+## Individual Preference Heatmap
 
 ```{r}
-
-lca_classes = modlist[[k-1]]$predclass
-
 #Create teh heatmap
 row_order <- order_within_cluster(dat_num, lca_classes)
 
