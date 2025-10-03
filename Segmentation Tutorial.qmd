@@ -533,10 +533,10 @@ clusternames = levels(scores$cluster)
 # Need to find convex hull of each cluster
 hull_points <- scores %>%
   group_by(cluster) %>%
-  slice(chull(PC1, PC3))
+  slice(chull(PC1, PC2))
 
 # cluster plot with arrows and labels
-ggplot(scores, aes(x = PC1, y = PC3, color = cluster, shape = cluster)) +
+ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
   geom_point(alpha = 0.4) +
   theme_classic() +
   ggtitle("MiniBatchKmeans Clusters (PCA projection)") +
@@ -544,12 +544,12 @@ ggplot(scores, aes(x = PC1, y = PC3, color = cluster, shape = cluster)) +
                alpha = 0.1) +
   theme_classic() +
   geom_segment(data = cor_with_items,
-               aes(x = 0, y = 0, xend = PC1 * arrow_scale, yend = PC3 * arrow_scale),
+               aes(x = 0, y = 0, xend = PC1 * arrow_scale, yend = PC2 * arrow_scale),
                arrow = arrow(length = unit(0.2,"cm")),
                inherit.aes = FALSE, color = "black") +
   ggrepel::geom_text_repel(data = cor_with_items,
                aes(x = PC1 * (arrow_scale + 0.5),
-                   y = PC3 * (arrow_scale + 0.5),
+                   y = PC2 * (arrow_scale + 0.5),
                    label = Variable),
                inherit.aes = FALSE,
                size = 5, color = "black", max.overlaps = 100) +
