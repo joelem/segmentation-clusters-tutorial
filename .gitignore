@@ -9,7 +9,6 @@
 *.sav
 *.zip
 *.rds
-*.pptx
 *.vdoc.r
 *.xlsm
 *.DS_Store
